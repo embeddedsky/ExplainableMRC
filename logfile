@@ -1,0 +1,10 @@
+
+No compatibility mode selected!
+
+
+Circuit: memristor with threshold
+
+Override trtol to 1 for xspice 'A' devices
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using transient initial conditions
