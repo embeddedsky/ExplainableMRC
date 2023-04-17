@@ -1,0 +1,1268 @@
+Memristor with threshold
+*.OPTIONS	POST=1	LIST ingold=2 runlvl=0
+.param stime=0.5
+*.param uni=unif(0.5,0.5)
+
+* send parameters to the .control section
+
+.csparam stime={stime}
+
+
+**************MOSFET**********************************************************************
+.model n12 nmos level=49 version=3.3.0 L=1.000E-05 W=1.000E-05
+.model p12 pmos level=49 version=3.3.0 L=1.000E-05 W=1.000E-05
+
+*.model n1 nmos level=49 version=3.3.0
+*.model p1 pmos level=49 version=3.3.0
+
+*.MODEL n1 NMOS level=49 version=3.3.0 W=3u L=0.35u pd=9u ad=9p ps=9u as=9p
+*.MODEL p1 PMOS level=49 version=3.3.0 W=7.5u L=0.35u pd=13.5u ad=22.5p ps=13.5u as=22.5p
+
+*.model n1 nmos level=8 version=3.2.2
+*.model p1 pmos level=8 version=3.2.2
+
+.MODEL n12 NMOS L=1.000E-05 W=1.000E-05
+.MODEL p21 PMOS L=1.000E-05 W=1.000E-05
+
+.MODEL n1 NMOS (LEVEL=49
++VERSION=3.3 CAPMOD=2 MOBMOD=1
++TOX=1E-7 NCH=1.45E17 NSUB=5.33E16 XT=8.66E-8
++VTH0=0.3 U0= 600 WINT=2.0E-7 LINT=1E-7
++NGATE=5E20 RSH=1082 JS=3.23E-8 JSW=3.23E-8 CJ=6.8E-4 MJ=0.5 PB=0.95
++CJSW=1.26E-10 MJSW=0.5 PBSW=0.95 PCLM=5
++CGSO=3.4E-10 CGDO=3.4E-10 CGBO=5.75E-10)
+
+.MODEL p1 PMOS (LEVEL=49
++VERSION=3.3 CAPMOD=2 MOBMOD=1
++TOX=1E-7 NCH=7.12E16 NSUB=3.16E16 XT=8.66E-8
++VTH0=-0.3 U0= 376.72 WINT=2.0E-7 LINT=2.26E-7
++NGATE=5E20 RSH=1347 JS=3.51E-8 JSW=3.51E-8 CJ=5.28E-4 MJ=0.5 PB=0.94
++CJSW=1.19E-10 MJSW=0.5 PBSW=0.94
++CGSO=4.5E-10 CGDO=4.5E-10 CGBO=5.75E-10)
+
+***************************memristor**************************************************************************************
+.subckt memristor 1 2 x params: alpha=1e-4 beta=0.2 gamma=1e-3 deltam=1 wmax=1 wmin=0 xini='ra' reten='0.1/stime' tao='0.15/stime',
+.param lambda='0.005/stime' eta1=4 eta2=2 tau='0.5/stime' sigma=0.0001 theta=0.01
+**the conductance**
+Cx x 0 1 IC={xini}
+Raux y 0 1T
+**the reten raito**
+Cy y 0 1 IC={reten}
+Rauy y 0 1T
+**the diffusion time**
+Cz z 0 1 IC={tao}
+Rauz z 0 1T
+Gx 0 x value={trunc(V(1,2),V(x))*(lambda*exp(eta1*V(1,2)-exp(-eta2*V(1,2)))-(V(x)-V(y)/V(z)))}
+Gy 0 y value={trunc(V(1,2),V(y))*lambda*(exp(eta1*V(1,2))-exp(-eta2*V(1,2)))}
+Gz 0 z value={theta*(exp(eta1*V(1,2))-exp(-eta2*V(1,2)))}
+
+* rate equation considering the diffusion effect *
+*Gx 0 x value={trunc(V(1,2),V(x))*(lambda*(exp(eta1*V(1,2))-exp(-eta2*V(1,2)))-V(x)/tau)}
+* rate equation without the diffusion effect *
+* Gx 0 x value=trunc(V(1,2),V(x))*lambda*(exp(eta1*V(1,2))-exp(-eta2*V(1,2))) *
+* Gx 0 x value=f(V(x),V(1,2),1)*lambda*(exp(eta1*V(1,2))-exp(-eta2*V(1,2))) *
+
+.func sign2(var) {(sgn(var)+1)/2}
+.func trunc(var1,var2) {sign2(var1)*sign2(wmax-var2)+sign2(-var1)*sign2(var2-wmin)}
+
+* window function, according to Joglekar *
+.func f(x,p) {(1-pow(2*x-1,2*p))}
+* window function proposed by Biolek *
+*.func f(x,i,p)=1-(x-stp(-i))ˆ (2*p)*
+
+Gw 1 2 value={(1-V(x))*alpha*(1-exp(-beta*V(1,2)))+V(x)*gamma*sinh(deltam*V(1,2))}
+.ends memristor
+
+
+
+
+**************reservior units-4类*********************************
+***************unitrc1*********************************
+.subckt unitrc1_old in out params: ra=0.14 tb=0.03
+xmen 2 121 memristor xini='ra'
+vtemp2 121 1 dc 0
+Mp1 2 cpminus in in p1
+Mn1 1 cppulse out out n1
+Mn2 2 cpminus out out n1
+Mp2 1 cppulse in in p1
+vcp41 cppulse 0 DC 0 PULSE(0 5 0 0 0 'tb*stime' 'tb*2*stime')
+vcp42 cpminus 0 DC 0 PULSE(5 0 0 0 0 'tb*stime' 'tb*2*stime')
+*vtemp1 out1 out dc 0
+*xs1 out2 0 out myswitch
+.ends
+
+.subckt unitrc1 in out params: ra=0.14 tb=0.03
+xmen out 121 out1 memristor xini='ra' k='tb'
+vtemp2 121 in dc 0
+Rl out1 0 100k
+*Mp1 2 cpminus in in p1
+*Mn1 1 cppulse out out n1
+*Mn2 2 cpminus out out n1
+*Mp2 1 cppulse in in p1
+vcp41 cppulse 0 DC 0 PULSE(0 5 0 0 0 'tb*stime' 'tb*2*stime')
+vcp42 cpminus 0 DC 0 PULSE(5 0 0 0 0 'tb*stime' 'tb*2*stime')
+*vtemp1 out1 out dc 0
+*xs1 out2 0 out myswitch
+.ends
+***************unitrc3（大阻值相当于断路）*********************************
+.subckt unitrc2 in out
+R1 in out 1e+12
+.ends
+
+***********input voltage*****************
+*vcp 100 0 sin(2.5 2.5 '10/stime' 0 0 0)
+*vcp 100 0 sin(4.5 4.5 '20/stime' '0.5*stime' 0 0)
+.subckt filesource1 1 2
+a1 %vd([1 2]) filesrc1
+.model filesrc1 filesource (file="signal1.m" amploffset=[0] amplscale=[1]
++ timeoffset=0 timescale=1
++ timerelative=false amplstep=false)
+.ends
+
+.subckt filesource2 1 2
+a1 %vd([1 2]) filesrc2
+.model filesrc2 filesource (file="signal1.m" amploffset=[0] amplscale=[1]
++ timeoffset=0 timescale=1
++ timerelative=false amplstep=false)
+.ends
+
+.subckt filesource3 1 2
+a1 %vd([1 2]) filesrc3
+.model filesrc3 filesource (file="signal1.m" amploffset=[0] amplscale=[1]
++ timeoffset=0 timescale=1
++ timerelative=false amplstep=false)
+.ends
+
+.subckt filesource4 1 2
+a1 %vd([1 2]) filesrc4
+.model filesrc4 filesource (file="signal1.m" amploffset=[0] amplscale=[1]
++ timeoffset=0 timescale=1
++ timerelative=false amplstep=false)
+.ends
+
+.subckt filesource5 1 2
+a1 %vd([1 2]) filesrc5
+.model filesrc5 filesource (file="signal2.m" amploffset=[0] amplscale=[1]
++ timeoffset=0 timescale=1
++ timerelative=false amplstep=false)
+.ends
+
+.subckt filesource6 1 2
+a1 %vd([1 2]) filesrc6
+.model filesrc6 filesource (file="signal3.m" amploffset=[0] amplscale=[1]
++ timeoffset=0 timescale=1
++ timerelative=false amplstep=false)
+.ends
+
+.subckt filesource7 1 2
+a1 %vd([1 2]) filesrc7
+.model filesrc7 filesource (file="signal1.m" amploffset=[0] amplscale=[1]
++ timeoffset=0 timescale=1
++ timerelative=false amplstep=false)
+.ends
+
+.subckt filesource8 1 2
+a1 %vd([1 2]) filesrc8
+.model filesrc8 filesource (file="signal2.m" amploffset=[0] amplscale=[1]
++ timeoffset=0 timescale=1
++ timerelative=false amplstep=false)
+.ends
+
+.subckt filesource9 1 2
+a1 %vd([1 2]) filesrc9
+.model filesrc9 filesource (file="signal3.m" amploffset=[0] amplscale=[1]
++ timeoffset=0 timescale=1
++ timerelative=false amplstep=false)
+.ends
+
+X1 100 0 filesource1
+X2 101 0 filesource2
+X3 102 0 filesource3
+*X4 103 0 filesource4
+*X5 104 0 filesource5
+*X6 105 0 filesource6
+*X7 106 0 filesource7
+*X8 107 0 filesource8
+*X9 108 0 filesource9
+***********target voltage*****************
+*vtarget1 vt1 0 DC 0 PULSE(0 0.001 0 0 0 'stime/20' 'stime/10')
+*vtarget2 vt2 0 DC 0 PULSE(0 0.001 0  'stime/20' 0 'stime/999' 'stime/10')
+*vtarget3 vt3 0 DC 0 sin(0.0005 0.0005 '20/stime' 0 0 0)
+
+.subckt filesource10 1 2
+a1 %vd([1 2]) filesrc10
+.model filesrc10 filesource (file="output.m" amploffset=[0] amplscale=[1]
++ timeoffset=0 timescale=1
++ timerelative=false amplstep=false)
+.ends
+
+xtarget1 vt1 0 filesource4
+**************input layer***********
+*xunitin1 1 2 unitin ta=0.199
+*xopein 2 5 ope
+*Rin1 1 5 1k
+***********reservior input voltage (演化下面out_gain这个参数-1到1之间)*****************
+*vp1 112 0 DC 0 PULSE(1 0 0 0 0 'stime' 'stime')
+*a2 [5 112] 113 sigmulta2
+*.model sigmulta2 mult(in_offset=[0 0]
+*+ in_gain=[1.0 1.0] out_gain=1 out_offset=0)
+
+************待生成reservior*(必须包含节点113)(6-26)*********************************
+*************随机选择reservior中的一个节点接输入和地***********
+
+
+vtemprc1 100 6 dc 0
+vtemprc2 101 4 dc 0
+vtemprc3 102 3 dc 0
+vtemprc10  8 0 dc 0
+xunit1-2  1  2  unitrc1  ra=0.03  tb=0.24
+xunit1-3  1  3  unitrc1  ra=0.21  tb=0.29
+xunit1-4  1  4  unitrc1  ra=0.68  tb=0.16
+xunit1-8  1  8  unitrc1  ra=0.28  tb=0.39
+xunit1-9  1  9  unitrc1  ra=0.03  tb=0.29
+xunit1-16  1  16  unitrc1  ra=0.65  tb=0.37
+xunit1-18  1  18  unitrc1  ra=0.05  tb=0.14
+xunit1-19  1  19  unitrc1  ra=0.47  tb=0.47
+
+xunit2-3  2  3  unitrc1  ra=0.55  tb=0.31
+xunit2-4  2  4  unitrc1  ra=0.60  tb=0.43
+xunit2-6  2  6  unitrc1  ra=0.51  tb=0.35
+xunit2-7  2  7  unitrc1  ra=0.74  tb=0.30
+xunit2-8  2  8  unitrc1  ra=0.79  tb=0.36
+xunit2-11  2  11  unitrc1  ra=0.26  tb=0.39
+xunit2-12  2  12  unitrc1  ra=0.36  tb=0.27
+xunit2-13  2  13  unitrc1  ra=0.46  tb=0.23
+xunit2-18  2  18  unitrc1  ra=0.55  tb=0.39
+
+xunit3-1  3  1  unitrc1  ra=0.26  tb=0.07
+xunit3-3  3  3  unitrc1  ra=0.73  tb=0.21
+xunit3-4  3  4  unitrc1  ra=0.11  tb=0.08
+xunit3-8  3  8  unitrc1  ra=0.45  tb=0.15
+xunit3-9  3  9  unitrc1  ra=0.41  tb=0.26
+xunit3-11  3  11  unitrc1  ra=0.54  tb=0.24
+xunit3-14  3  14  unitrc1  ra=0.89  tb=0.10
+xunit3-15  3  15  unitrc1  ra=0.49  tb=0.45
+xunit3-18  3  18  unitrc1  ra=0.19  tb=0.16
+xunit3-20  3  20  unitrc1  ra=0.63  tb=0.19
+
+xunit4-1  4  1  unitrc1  ra=0.38  tb=0.40
+xunit4-2  4  2  unitrc1  ra=0.01  tb=0.44
+xunit4-5  4  5  unitrc1  ra=0.64  tb=0.41
+xunit4-7  4  7  unitrc1  ra=0.91  tb=0.06
+xunit4-9  4  9  unitrc1  ra=0.12  tb=0.26
+xunit4-11  4  11  unitrc1  ra=0.78  tb=0.41
+xunit4-13  4  13  unitrc1  ra=0.85  tb=0.41
+xunit4-19  4  19  unitrc1  ra=0.90  tb=0.06
+
+xunit5-1  5  1  unitrc1  ra=0.62  tb=0.32
+xunit5-3  5  3  unitrc1  ra=0.81  tb=0.13
+xunit5-5  5  5  unitrc1  ra=0.54  tb=0.13
+xunit5-6  5  6  unitrc1  ra=0.62  tb=0.23
+xunit5-8  5  8  unitrc1  ra=0.49  tb=0.25
+xunit5-9  5  9  unitrc1  ra=0.58  tb=0.07
+xunit5-12  5  12  unitrc1  ra=0.54  tb=0.05
+xunit5-15  5  15  unitrc1  ra=0.94  tb=0.13
+xunit5-20  5  20  unitrc1  ra=0.96  tb=0.41
+
+xunit6-2  6  2  unitrc1  ra=0.32  tb=0.22
+xunit6-4  6  4  unitrc1  ra=0.30  tb=0.15
+xunit6-5  6  5  unitrc1  ra=0.20  tb=0.48
+xunit6-7  6  7  unitrc1  ra=0.70  tb=0.30
+xunit6-9  6  9  unitrc1  ra=0.91  tb=0.21
+xunit6-11  6  11  unitrc1  ra=0.85  tb=0.24
+xunit6-12  6  12  unitrc1  ra=0.54  tb=0.14
+xunit6-14  6  14  unitrc1  ra=0.50  tb=0.01
+xunit6-16  6  16  unitrc1  ra=0.52  tb=0.49
+xunit6-18  6  18  unitrc1  ra=0.36  tb=0.14
+xunit6-20  6  20  unitrc1  ra=0.47  tb=0.09
+
+xunit7-3  7  3  unitrc1  ra=0.40  tb=0.36
+xunit7-4  7  4  unitrc1  ra=0.11  tb=0.16
+xunit7-7  7  7  unitrc1  ra=0.40  tb=0.08
+xunit7-8  7  8  unitrc1  ra=0.86  tb=0.17
+xunit7-9  7  9  unitrc1  ra=0.99  tb=0.28
+xunit7-10  7  10  unitrc1  ra=0.25  tb=0.48
+xunit7-11  7  11  unitrc1  ra=0.67  tb=0.47
+xunit7-15  7  15  unitrc1  ra=0.40  tb=0.24
+xunit7-19  7  19  unitrc1  ra=0.45  tb=0.39
+
+xunit8-1  8  1  unitrc1  ra=0.38  tb=0.39
+xunit8-2  8  2  unitrc1  ra=0.56  tb=0.39
+xunit8-4  8  4  unitrc1  ra=0.07  tb=0.37
+xunit8-7  8  7  unitrc1  ra=0.58  tb=0.08
+xunit8-9  8  9  unitrc1  ra=0.06  tb=0.48
+xunit8-10  8  10  unitrc1  ra=0.99  tb=0.20
+xunit8-15  8  15  unitrc1  ra=0.63  tb=0.21
+xunit8-16  8  16  unitrc1  ra=0.34  tb=0.16
+
+xunit9-5  9  5  unitrc1  ra=0.43  tb=0.43
+xunit9-6  9  6  unitrc1  ra=0.57  tb=0.40
+xunit9-7  9  7  unitrc1  ra=0.34  tb=0.20
+xunit9-10  9  10  unitrc1  ra=0.68  tb=0.05
+xunit9-11  9  11  unitrc1  ra=0.24  tb=0.10
+xunit9-12  9  12  unitrc1  ra=0.74  tb=0.45
+xunit9-13  9  13  unitrc1  ra=0.43  tb=0.14
+xunit9-17  9  17  unitrc1  ra=0.56  tb=0.22
+xunit9-20  9  20  unitrc1  ra=0.08  tb=0.42
+
+xunit10-1  10  1  unitrc1  ra=0.64  tb=0.19
+xunit10-4  10  4  unitrc1  ra=0.57  tb=0.26
+xunit10-7  10  7  unitrc1  ra=0.35  tb=0.31
+xunit10-11  10  11  unitrc1  ra=0.22  tb=0.24
+xunit10-13  10  13  unitrc1  ra=0.56  tb=0.05
+xunit10-16  10  16  unitrc1  ra=0.81  tb=0.23
+xunit10-17  10  17  unitrc1  ra=0.42  tb=0.16
+xunit10-18  10  18  unitrc1  ra=0.73  tb=0.30
+
+xunit11-3  11  3  unitrc1  ra=0.58  tb=0.18
+xunit11-6  11  6  unitrc1  ra=0.04  tb=0.36
+xunit11-7  11  7  unitrc1  ra=0.87  tb=0.37
+xunit11-10  11  10  unitrc1  ra=0.61  tb=0.00
+xunit11-12  11  12  unitrc1  ra=0.40  tb=0.19
+xunit11-13  11  13  unitrc1  ra=0.43  tb=0.32
+xunit11-15  11  15  unitrc1  ra=0.39  tb=0.47
+xunit11-16  11  16  unitrc1  ra=0.40  tb=0.15
+xunit11-19  11  19  unitrc1  ra=0.33  tb=0.27
+xunit11-20  11  20  unitrc1  ra=0.45  tb=0.31
+
+xunit12-5  12  5  unitrc1  ra=0.60  tb=0.26
+xunit12-10  12  10  unitrc1  ra=0.07  tb=0.37
+xunit12-11  12  11  unitrc1  ra=0.52  tb=0.45
+xunit12-12  12  12  unitrc1  ra=0.16  tb=0.37
+xunit12-13  12  13  unitrc1  ra=0.57  tb=0.24
+xunit12-15  12  15  unitrc1  ra=0.51  tb=0.34
+xunit12-18  12  18  unitrc1  ra=0.85  tb=0.20
+xunit12-20  12  20  unitrc1  ra=0.14  tb=0.33
+
+xunit13-1  13  1  unitrc1  ra=0.27  tb=0.16
+xunit13-2  13  2  unitrc1  ra=0.41  tb=0.19
+xunit13-6  13  6  unitrc1  ra=0.59  tb=0.12
+xunit13-8  13  8  unitrc1  ra=0.68  tb=0.15
+xunit13-9  13  9  unitrc1  ra=0.48  tb=0.32
+xunit13-10  13  10  unitrc1  ra=0.25  tb=0.08
+xunit13-11  13  11  unitrc1  ra=0.82  tb=0.48
+xunit13-14  13  14  unitrc1  ra=0.66  tb=0.06
+xunit13-15  13  15  unitrc1  ra=0.62  tb=0.38
+xunit13-16  13  16  unitrc1  ra=0.57  tb=0.48
+xunit13-17  13  17  unitrc1  ra=0.72  tb=0.26
+xunit13-19  13  19  unitrc1  ra=0.65  tb=0.24
+xunit13-20  13  20  unitrc1  ra=0.73  tb=0.25
+
+xunit14-1  14  1  unitrc1  ra=0.44  tb=0.05
+xunit14-7  14  7  unitrc1  ra=0.12  tb=0.10
+xunit14-11  14  11  unitrc1  ra=0.87  tb=0.10
+xunit14-13  14  13  unitrc1  ra=0.05  tb=0.20
+xunit14-15  14  15  unitrc1  ra=0.19  tb=0.11
+xunit14-19  14  19  unitrc1  ra=0.56  tb=0.35
+
+xunit15-1  15  1  unitrc1  ra=0.17  tb=0.35
+xunit15-2  15  2  unitrc1  ra=0.51  tb=0.30
+xunit15-3  15  3  unitrc1  ra=0.73  tb=0.23
+xunit15-8  15  8  unitrc1  ra=0.43  tb=0.35
+xunit15-16  15  16  unitrc1  ra=0.68  tb=0.41
+xunit15-17  15  17  unitrc1  ra=0.15  tb=0.17
+xunit15-19  15  19  unitrc1  ra=0.69  tb=0.49
+
+xunit16-1  16  1  unitrc1  ra=0.29  tb=0.29
+xunit16-3  16  3  unitrc1  ra=0.06  tb=0.34
+xunit16-6  16  6  unitrc1  ra=0.32  tb=0.49
+xunit16-9  16  9  unitrc1  ra=0.38  tb=0.05
+xunit16-11  16  11  unitrc1  ra=0.48  tb=0.21
+xunit16-13  16  13  unitrc1  ra=0.69  tb=0.19
+xunit16-15  16  15  unitrc1  ra=0.36  tb=0.04
+xunit16-17  16  17  unitrc1  ra=0.53  tb=0.20
+xunit16-18  16  18  unitrc1  ra=0.40  tb=0.47
+xunit16-19  16  19  unitrc1  ra=0.72  tb=0.12
+xunit16-20  16  20  unitrc1  ra=0.33  tb=0.31
+
+xunit17-2  17  2  unitrc1  ra=0.64  tb=0.27
+xunit17-4  17  4  unitrc1  ra=0.69  tb=0.09
+xunit17-13  17  13  unitrc1  ra=0.65  tb=0.15
+xunit17-16  17  16  unitrc1  ra=0.52  tb=0.29
+xunit17-17  17  17  unitrc1  ra=0.99  tb=0.23
+xunit17-18  17  18  unitrc1  ra=0.30  tb=0.22
+
+xunit18-1  18  1  unitrc1  ra=0.08  tb=0.39
+xunit18-3  18  3  unitrc1  ra=0.05  tb=0.14
+xunit18-5  18  5  unitrc1  ra=0.32  tb=0.11
+xunit18-6  18  6  unitrc1  ra=0.18  tb=0.12
+xunit18-8  18  8  unitrc1  ra=0.35  tb=0.13
+xunit18-11  18  11  unitrc1  ra=0.80  tb=0.03
+xunit18-13  18  13  unitrc1  ra=0.76  tb=0.10
+xunit18-14  18  14  unitrc1  ra=0.55  tb=0.05
+xunit18-15  18  15  unitrc1  ra=0.88  tb=0.39
+xunit18-18  18  18  unitrc1  ra=0.54  tb=0.33
+xunit18-19  18  19  unitrc1  ra=0.54  tb=0.02
+xunit18-20  18  20  unitrc1  ra=1.00  tb=0.37
+
+xunit19-3  19  3  unitrc1  ra=0.74  tb=0.31
+xunit19-7  19  7  unitrc1  ra=0.87  tb=0.30
+xunit19-8  19  8  unitrc1  ra=0.27  tb=0.19
+xunit19-10  19  10  unitrc1  ra=0.48  tb=0.03
+xunit19-12  19  12  unitrc1  ra=0.64  tb=0.11
+xunit19-16  19  16  unitrc1  ra=0.46  tb=0.30
+xunit19-20  19  20  unitrc1  ra=0.27  tb=0.34
+
+xunit20-2  20  2  unitrc1  ra=0.44  tb=0.11
+xunit20-4  20  4  unitrc1  ra=0.77  tb=0.29
+xunit20-5  20  5  unitrc1  ra=0.31  tb=0.48
+xunit20-6  20  6  unitrc1  ra=0.26  tb=0.44
+xunit20-10  20  10  unitrc1  ra=0.99  tb=0.10
+xunit20-18  20  18  unitrc1  ra=0.46  tb=0.01
+xunit20-20  20  20  unitrc1  ra=0.84  tb=0.32
+
+.save   time
+.save   v.xunit1-1.vtemp2#branch
+.save   v.xunit1-2.vtemp2#branch
+.save   v.xunit1-3.vtemp2#branch
+.save   v.xunit1-4.vtemp2#branch
+.save   v.xunit1-5.vtemp2#branch
+.save   v.xunit1-6.vtemp2#branch
+.save   v.xunit1-7.vtemp2#branch
+.save   v.xunit1-8.vtemp2#branch
+.save   v.xunit1-9.vtemp2#branch
+.save   v.xunit1-10.vtemp2#branch
+.save   v.xunit1-11.vtemp2#branch
+.save   v.xunit1-12.vtemp2#branch
+.save   v.xunit1-13.vtemp2#branch
+.save   v.xunit1-14.vtemp2#branch
+.save   v.xunit1-15.vtemp2#branch
+.save   v.xunit1-16.vtemp2#branch
+.save   v.xunit1-17.vtemp2#branch
+.save   v.xunit1-18.vtemp2#branch
+.save   v.xunit1-19.vtemp2#branch
+.save   v.xunit1-20.vtemp2#branch
+
+.save   v(xunit1-1.out1)
+.save   v(xunit1-2.out1)
+.save   v(xunit1-3.out1)
+.save   v(xunit1-4.out1)
+.save   v(xunit1-5.out1)
+.save   v(xunit1-6.out1)
+.save   v(xunit1-7.out1)
+.save   v(xunit1-8.out1)
+.save   v(xunit1-9.out1)
+.save   v(xunit1-10.out1)
+.save   v(xunit1-11.out1)
+.save   v(xunit1-12.out1)
+.save   v(xunit1-13.out1)
+.save   v(xunit1-14.out1)
+.save   v(xunit1-15.out1)
+.save   v(xunit1-16.out1)
+.save   v(xunit1-17.out1)
+.save   v(xunit1-18.out1)
+.save   v(xunit1-19.out1)
+.save   v(xunit1-20.out1)
+
+.save   v.xunit2-1.vtemp2#branch
+.save   v.xunit2-2.vtemp2#branch
+.save   v.xunit2-3.vtemp2#branch
+.save   v.xunit2-4.vtemp2#branch
+.save   v.xunit2-5.vtemp2#branch
+.save   v.xunit2-6.vtemp2#branch
+.save   v.xunit2-7.vtemp2#branch
+.save   v.xunit2-8.vtemp2#branch
+.save   v.xunit2-9.vtemp2#branch
+.save   v.xunit2-10.vtemp2#branch
+.save   v.xunit2-11.vtemp2#branch
+.save   v.xunit2-12.vtemp2#branch
+.save   v.xunit2-13.vtemp2#branch
+.save   v.xunit2-14.vtemp2#branch
+.save   v.xunit2-15.vtemp2#branch
+.save   v.xunit2-16.vtemp2#branch
+.save   v.xunit2-17.vtemp2#branch
+.save   v.xunit2-18.vtemp2#branch
+.save   v.xunit2-19.vtemp2#branch
+.save   v.xunit2-20.vtemp2#branch
+
+.save   v(xunit2-1.out1)
+.save   v(xunit2-2.out1)
+.save   v(xunit2-3.out1)
+.save   v(xunit2-4.out1)
+.save   v(xunit2-5.out1)
+.save   v(xunit2-6.out1)
+.save   v(xunit2-7.out1)
+.save   v(xunit2-8.out1)
+.save   v(xunit2-9.out1)
+.save   v(xunit2-10.out1)
+.save   v(xunit2-11.out1)
+.save   v(xunit2-12.out1)
+.save   v(xunit2-13.out1)
+.save   v(xunit2-14.out1)
+.save   v(xunit2-15.out1)
+.save   v(xunit2-16.out1)
+.save   v(xunit2-17.out1)
+.save   v(xunit2-18.out1)
+.save   v(xunit2-19.out1)
+.save   v(xunit2-20.out1)
+
+.save   v.xunit3-1.vtemp2#branch
+.save   v.xunit3-2.vtemp2#branch
+.save   v.xunit3-3.vtemp2#branch
+.save   v.xunit3-4.vtemp2#branch
+.save   v.xunit3-5.vtemp2#branch
+.save   v.xunit3-6.vtemp2#branch
+.save   v.xunit3-7.vtemp2#branch
+.save   v.xunit3-8.vtemp2#branch
+.save   v.xunit3-9.vtemp2#branch
+.save   v.xunit3-10.vtemp2#branch
+.save   v.xunit3-11.vtemp2#branch
+.save   v.xunit3-12.vtemp2#branch
+.save   v.xunit3-13.vtemp2#branch
+.save   v.xunit3-14.vtemp2#branch
+.save   v.xunit3-15.vtemp2#branch
+.save   v.xunit3-16.vtemp2#branch
+.save   v.xunit3-17.vtemp2#branch
+.save   v.xunit3-18.vtemp2#branch
+.save   v.xunit3-19.vtemp2#branch
+.save   v.xunit3-20.vtemp2#branch
+
+.save   v(xunit3-1.out1)
+.save   v(xunit3-2.out1)
+.save   v(xunit3-3.out1)
+.save   v(xunit3-4.out1)
+.save   v(xunit3-5.out1)
+.save   v(xunit3-6.out1)
+.save   v(xunit3-7.out1)
+.save   v(xunit3-8.out1)
+.save   v(xunit3-9.out1)
+.save   v(xunit3-10.out1)
+.save   v(xunit3-11.out1)
+.save   v(xunit3-12.out1)
+.save   v(xunit3-13.out1)
+.save   v(xunit3-14.out1)
+.save   v(xunit3-15.out1)
+.save   v(xunit3-16.out1)
+.save   v(xunit3-17.out1)
+.save   v(xunit3-18.out1)
+.save   v(xunit3-19.out1)
+.save   v(xunit3-20.out1)
+
+.save   v.xunit4-1.vtemp2#branch
+.save   v.xunit4-2.vtemp2#branch
+.save   v.xunit4-3.vtemp2#branch
+.save   v.xunit4-4.vtemp2#branch
+.save   v.xunit4-5.vtemp2#branch
+.save   v.xunit4-6.vtemp2#branch
+.save   v.xunit4-7.vtemp2#branch
+.save   v.xunit4-8.vtemp2#branch
+.save   v.xunit4-9.vtemp2#branch
+.save   v.xunit4-10.vtemp2#branch
+.save   v.xunit4-11.vtemp2#branch
+.save   v.xunit4-12.vtemp2#branch
+.save   v.xunit4-13.vtemp2#branch
+.save   v.xunit4-14.vtemp2#branch
+.save   v.xunit4-15.vtemp2#branch
+.save   v.xunit4-16.vtemp2#branch
+.save   v.xunit4-17.vtemp2#branch
+.save   v.xunit4-18.vtemp2#branch
+.save   v.xunit4-19.vtemp2#branch
+.save   v.xunit4-20.vtemp2#branch
+
+.save   v(xunit4-1.out1)
+.save   v(xunit4-2.out1)
+.save   v(xunit4-3.out1)
+.save   v(xunit4-4.out1)
+.save   v(xunit4-5.out1)
+.save   v(xunit4-6.out1)
+.save   v(xunit4-7.out1)
+.save   v(xunit4-8.out1)
+.save   v(xunit4-9.out1)
+.save   v(xunit4-10.out1)
+.save   v(xunit4-11.out1)
+.save   v(xunit4-12.out1)
+.save   v(xunit4-13.out1)
+.save   v(xunit4-14.out1)
+.save   v(xunit4-15.out1)
+.save   v(xunit4-16.out1)
+.save   v(xunit4-17.out1)
+.save   v(xunit4-18.out1)
+.save   v(xunit4-19.out1)
+.save   v(xunit4-20.out1)
+
+.save   v.xunit5-1.vtemp2#branch
+.save   v.xunit5-2.vtemp2#branch
+.save   v.xunit5-3.vtemp2#branch
+.save   v.xunit5-4.vtemp2#branch
+.save   v.xunit5-5.vtemp2#branch
+.save   v.xunit5-6.vtemp2#branch
+.save   v.xunit5-7.vtemp2#branch
+.save   v.xunit5-8.vtemp2#branch
+.save   v.xunit5-9.vtemp2#branch
+.save   v.xunit5-10.vtemp2#branch
+.save   v.xunit5-11.vtemp2#branch
+.save   v.xunit5-12.vtemp2#branch
+.save   v.xunit5-13.vtemp2#branch
+.save   v.xunit5-14.vtemp2#branch
+.save   v.xunit5-15.vtemp2#branch
+.save   v.xunit5-16.vtemp2#branch
+.save   v.xunit5-17.vtemp2#branch
+.save   v.xunit5-18.vtemp2#branch
+.save   v.xunit5-19.vtemp2#branch
+.save   v.xunit5-20.vtemp2#branch
+
+.save   v(xunit5-1.out1)
+.save   v(xunit5-2.out1)
+.save   v(xunit5-3.out1)
+.save   v(xunit5-4.out1)
+.save   v(xunit5-5.out1)
+.save   v(xunit5-6.out1)
+.save   v(xunit5-7.out1)
+.save   v(xunit5-8.out1)
+.save   v(xunit5-9.out1)
+.save   v(xunit5-10.out1)
+.save   v(xunit5-11.out1)
+.save   v(xunit5-12.out1)
+.save   v(xunit5-13.out1)
+.save   v(xunit5-14.out1)
+.save   v(xunit5-15.out1)
+.save   v(xunit5-16.out1)
+.save   v(xunit5-17.out1)
+.save   v(xunit5-18.out1)
+.save   v(xunit5-19.out1)
+.save   v(xunit5-20.out1)
+
+.save   v.xunit6-1.vtemp2#branch
+.save   v.xunit6-2.vtemp2#branch
+.save   v.xunit6-3.vtemp2#branch
+.save   v.xunit6-4.vtemp2#branch
+.save   v.xunit6-5.vtemp2#branch
+.save   v.xunit6-6.vtemp2#branch
+.save   v.xunit6-7.vtemp2#branch
+.save   v.xunit6-8.vtemp2#branch
+.save   v.xunit6-9.vtemp2#branch
+.save   v.xunit6-10.vtemp2#branch
+.save   v.xunit6-11.vtemp2#branch
+.save   v.xunit6-12.vtemp2#branch
+.save   v.xunit6-13.vtemp2#branch
+.save   v.xunit6-14.vtemp2#branch
+.save   v.xunit6-15.vtemp2#branch
+.save   v.xunit6-16.vtemp2#branch
+.save   v.xunit6-17.vtemp2#branch
+.save   v.xunit6-18.vtemp2#branch
+.save   v.xunit6-19.vtemp2#branch
+.save   v.xunit6-20.vtemp2#branch
+
+.save   v(xunit6-1.out1)
+.save   v(xunit6-2.out1)
+.save   v(xunit6-3.out1)
+.save   v(xunit6-4.out1)
+.save   v(xunit6-5.out1)
+.save   v(xunit6-6.out1)
+.save   v(xunit6-7.out1)
+.save   v(xunit6-8.out1)
+.save   v(xunit6-9.out1)
+.save   v(xunit6-10.out1)
+.save   v(xunit6-11.out1)
+.save   v(xunit6-12.out1)
+.save   v(xunit6-13.out1)
+.save   v(xunit6-14.out1)
+.save   v(xunit6-15.out1)
+.save   v(xunit6-16.out1)
+.save   v(xunit6-17.out1)
+.save   v(xunit6-18.out1)
+.save   v(xunit6-19.out1)
+.save   v(xunit6-20.out1)
+
+.save   v.xunit7-1.vtemp2#branch
+.save   v.xunit7-2.vtemp2#branch
+.save   v.xunit7-3.vtemp2#branch
+.save   v.xunit7-4.vtemp2#branch
+.save   v.xunit7-5.vtemp2#branch
+.save   v.xunit7-6.vtemp2#branch
+.save   v.xunit7-7.vtemp2#branch
+.save   v.xunit7-8.vtemp2#branch
+.save   v.xunit7-9.vtemp2#branch
+.save   v.xunit7-10.vtemp2#branch
+.save   v.xunit7-11.vtemp2#branch
+.save   v.xunit7-12.vtemp2#branch
+.save   v.xunit7-13.vtemp2#branch
+.save   v.xunit7-14.vtemp2#branch
+.save   v.xunit7-15.vtemp2#branch
+.save   v.xunit7-16.vtemp2#branch
+.save   v.xunit7-17.vtemp2#branch
+.save   v.xunit7-18.vtemp2#branch
+.save   v.xunit7-19.vtemp2#branch
+.save   v.xunit7-20.vtemp2#branch
+
+.save   v(xunit7-1.out1)
+.save   v(xunit7-2.out1)
+.save   v(xunit7-3.out1)
+.save   v(xunit7-4.out1)
+.save   v(xunit7-5.out1)
+.save   v(xunit7-6.out1)
+.save   v(xunit7-7.out1)
+.save   v(xunit7-8.out1)
+.save   v(xunit7-9.out1)
+.save   v(xunit7-10.out1)
+.save   v(xunit7-11.out1)
+.save   v(xunit7-12.out1)
+.save   v(xunit7-13.out1)
+.save   v(xunit7-14.out1)
+.save   v(xunit7-15.out1)
+.save   v(xunit7-16.out1)
+.save   v(xunit7-17.out1)
+.save   v(xunit7-18.out1)
+.save   v(xunit7-19.out1)
+.save   v(xunit7-20.out1)
+
+.save   v.xunit8-1.vtemp2#branch
+.save   v.xunit8-2.vtemp2#branch
+.save   v.xunit8-3.vtemp2#branch
+.save   v.xunit8-4.vtemp2#branch
+.save   v.xunit8-5.vtemp2#branch
+.save   v.xunit8-6.vtemp2#branch
+.save   v.xunit8-7.vtemp2#branch
+.save   v.xunit8-8.vtemp2#branch
+.save   v.xunit8-9.vtemp2#branch
+.save   v.xunit8-10.vtemp2#branch
+.save   v.xunit8-11.vtemp2#branch
+.save   v.xunit8-12.vtemp2#branch
+.save   v.xunit8-13.vtemp2#branch
+.save   v.xunit8-14.vtemp2#branch
+.save   v.xunit8-15.vtemp2#branch
+.save   v.xunit8-16.vtemp2#branch
+.save   v.xunit8-17.vtemp2#branch
+.save   v.xunit8-18.vtemp2#branch
+.save   v.xunit8-19.vtemp2#branch
+.save   v.xunit8-20.vtemp2#branch
+
+.save   v(xunit8-1.out1)
+.save   v(xunit8-2.out1)
+.save   v(xunit8-3.out1)
+.save   v(xunit8-4.out1)
+.save   v(xunit8-5.out1)
+.save   v(xunit8-6.out1)
+.save   v(xunit8-7.out1)
+.save   v(xunit8-8.out1)
+.save   v(xunit8-9.out1)
+.save   v(xunit8-10.out1)
+.save   v(xunit8-11.out1)
+.save   v(xunit8-12.out1)
+.save   v(xunit8-13.out1)
+.save   v(xunit8-14.out1)
+.save   v(xunit8-15.out1)
+.save   v(xunit8-16.out1)
+.save   v(xunit8-17.out1)
+.save   v(xunit8-18.out1)
+.save   v(xunit8-19.out1)
+.save   v(xunit8-20.out1)
+
+.save   v.xunit9-1.vtemp2#branch
+.save   v.xunit9-2.vtemp2#branch
+.save   v.xunit9-3.vtemp2#branch
+.save   v.xunit9-4.vtemp2#branch
+.save   v.xunit9-5.vtemp2#branch
+.save   v.xunit9-6.vtemp2#branch
+.save   v.xunit9-7.vtemp2#branch
+.save   v.xunit9-8.vtemp2#branch
+.save   v.xunit9-9.vtemp2#branch
+.save   v.xunit9-10.vtemp2#branch
+.save   v.xunit9-11.vtemp2#branch
+.save   v.xunit9-12.vtemp2#branch
+.save   v.xunit9-13.vtemp2#branch
+.save   v.xunit9-14.vtemp2#branch
+.save   v.xunit9-15.vtemp2#branch
+.save   v.xunit9-16.vtemp2#branch
+.save   v.xunit9-17.vtemp2#branch
+.save   v.xunit9-18.vtemp2#branch
+.save   v.xunit9-19.vtemp2#branch
+.save   v.xunit9-20.vtemp2#branch
+
+.save   v(xunit9-1.out1)
+.save   v(xunit9-2.out1)
+.save   v(xunit9-3.out1)
+.save   v(xunit9-4.out1)
+.save   v(xunit9-5.out1)
+.save   v(xunit9-6.out1)
+.save   v(xunit9-7.out1)
+.save   v(xunit9-8.out1)
+.save   v(xunit9-9.out1)
+.save   v(xunit9-10.out1)
+.save   v(xunit9-11.out1)
+.save   v(xunit9-12.out1)
+.save   v(xunit9-13.out1)
+.save   v(xunit9-14.out1)
+.save   v(xunit9-15.out1)
+.save   v(xunit9-16.out1)
+.save   v(xunit9-17.out1)
+.save   v(xunit9-18.out1)
+.save   v(xunit9-19.out1)
+.save   v(xunit9-20.out1)
+
+.save   v.xunit10-1.vtemp2#branch
+.save   v.xunit10-2.vtemp2#branch
+.save   v.xunit10-3.vtemp2#branch
+.save   v.xunit10-4.vtemp2#branch
+.save   v.xunit10-5.vtemp2#branch
+.save   v.xunit10-6.vtemp2#branch
+.save   v.xunit10-7.vtemp2#branch
+.save   v.xunit10-8.vtemp2#branch
+.save   v.xunit10-9.vtemp2#branch
+.save   v.xunit10-10.vtemp2#branch
+.save   v.xunit10-11.vtemp2#branch
+.save   v.xunit10-12.vtemp2#branch
+.save   v.xunit10-13.vtemp2#branch
+.save   v.xunit10-14.vtemp2#branch
+.save   v.xunit10-15.vtemp2#branch
+.save   v.xunit10-16.vtemp2#branch
+.save   v.xunit10-17.vtemp2#branch
+.save   v.xunit10-18.vtemp2#branch
+.save   v.xunit10-19.vtemp2#branch
+.save   v.xunit10-20.vtemp2#branch
+
+.save   v(xunit10-1.out1)
+.save   v(xunit10-2.out1)
+.save   v(xunit10-3.out1)
+.save   v(xunit10-4.out1)
+.save   v(xunit10-5.out1)
+.save   v(xunit10-6.out1)
+.save   v(xunit10-7.out1)
+.save   v(xunit10-8.out1)
+.save   v(xunit10-9.out1)
+.save   v(xunit10-10.out1)
+.save   v(xunit10-11.out1)
+.save   v(xunit10-12.out1)
+.save   v(xunit10-13.out1)
+.save   v(xunit10-14.out1)
+.save   v(xunit10-15.out1)
+.save   v(xunit10-16.out1)
+.save   v(xunit10-17.out1)
+.save   v(xunit10-18.out1)
+.save   v(xunit10-19.out1)
+.save   v(xunit10-20.out1)
+
+.save   v.xunit11-1.vtemp2#branch
+.save   v.xunit11-2.vtemp2#branch
+.save   v.xunit11-3.vtemp2#branch
+.save   v.xunit11-4.vtemp2#branch
+.save   v.xunit11-5.vtemp2#branch
+.save   v.xunit11-6.vtemp2#branch
+.save   v.xunit11-7.vtemp2#branch
+.save   v.xunit11-8.vtemp2#branch
+.save   v.xunit11-9.vtemp2#branch
+.save   v.xunit11-10.vtemp2#branch
+.save   v.xunit11-11.vtemp2#branch
+.save   v.xunit11-12.vtemp2#branch
+.save   v.xunit11-13.vtemp2#branch
+.save   v.xunit11-14.vtemp2#branch
+.save   v.xunit11-15.vtemp2#branch
+.save   v.xunit11-16.vtemp2#branch
+.save   v.xunit11-17.vtemp2#branch
+.save   v.xunit11-18.vtemp2#branch
+.save   v.xunit11-19.vtemp2#branch
+.save   v.xunit11-20.vtemp2#branch
+
+.save   v(xunit11-1.out1)
+.save   v(xunit11-2.out1)
+.save   v(xunit11-3.out1)
+.save   v(xunit11-4.out1)
+.save   v(xunit11-5.out1)
+.save   v(xunit11-6.out1)
+.save   v(xunit11-7.out1)
+.save   v(xunit11-8.out1)
+.save   v(xunit11-9.out1)
+.save   v(xunit11-10.out1)
+.save   v(xunit11-11.out1)
+.save   v(xunit11-12.out1)
+.save   v(xunit11-13.out1)
+.save   v(xunit11-14.out1)
+.save   v(xunit11-15.out1)
+.save   v(xunit11-16.out1)
+.save   v(xunit11-17.out1)
+.save   v(xunit11-18.out1)
+.save   v(xunit11-19.out1)
+.save   v(xunit11-20.out1)
+
+.save   v.xunit12-1.vtemp2#branch
+.save   v.xunit12-2.vtemp2#branch
+.save   v.xunit12-3.vtemp2#branch
+.save   v.xunit12-4.vtemp2#branch
+.save   v.xunit12-5.vtemp2#branch
+.save   v.xunit12-6.vtemp2#branch
+.save   v.xunit12-7.vtemp2#branch
+.save   v.xunit12-8.vtemp2#branch
+.save   v.xunit12-9.vtemp2#branch
+.save   v.xunit12-10.vtemp2#branch
+.save   v.xunit12-11.vtemp2#branch
+.save   v.xunit12-12.vtemp2#branch
+.save   v.xunit12-13.vtemp2#branch
+.save   v.xunit12-14.vtemp2#branch
+.save   v.xunit12-15.vtemp2#branch
+.save   v.xunit12-16.vtemp2#branch
+.save   v.xunit12-17.vtemp2#branch
+.save   v.xunit12-18.vtemp2#branch
+.save   v.xunit12-19.vtemp2#branch
+.save   v.xunit12-20.vtemp2#branch
+
+.save   v(xunit12-1.out1)
+.save   v(xunit12-2.out1)
+.save   v(xunit12-3.out1)
+.save   v(xunit12-4.out1)
+.save   v(xunit12-5.out1)
+.save   v(xunit12-6.out1)
+.save   v(xunit12-7.out1)
+.save   v(xunit12-8.out1)
+.save   v(xunit12-9.out1)
+.save   v(xunit12-10.out1)
+.save   v(xunit12-11.out1)
+.save   v(xunit12-12.out1)
+.save   v(xunit12-13.out1)
+.save   v(xunit12-14.out1)
+.save   v(xunit12-15.out1)
+.save   v(xunit12-16.out1)
+.save   v(xunit12-17.out1)
+.save   v(xunit12-18.out1)
+.save   v(xunit12-19.out1)
+.save   v(xunit12-20.out1)
+
+.save   v.xunit13-1.vtemp2#branch
+.save   v.xunit13-2.vtemp2#branch
+.save   v.xunit13-3.vtemp2#branch
+.save   v.xunit13-4.vtemp2#branch
+.save   v.xunit13-5.vtemp2#branch
+.save   v.xunit13-6.vtemp2#branch
+.save   v.xunit13-7.vtemp2#branch
+.save   v.xunit13-8.vtemp2#branch
+.save   v.xunit13-9.vtemp2#branch
+.save   v.xunit13-10.vtemp2#branch
+.save   v.xunit13-11.vtemp2#branch
+.save   v.xunit13-12.vtemp2#branch
+.save   v.xunit13-13.vtemp2#branch
+.save   v.xunit13-14.vtemp2#branch
+.save   v.xunit13-15.vtemp2#branch
+.save   v.xunit13-16.vtemp2#branch
+.save   v.xunit13-17.vtemp2#branch
+.save   v.xunit13-18.vtemp2#branch
+.save   v.xunit13-19.vtemp2#branch
+.save   v.xunit13-20.vtemp2#branch
+
+.save   v(xunit13-1.out1)
+.save   v(xunit13-2.out1)
+.save   v(xunit13-3.out1)
+.save   v(xunit13-4.out1)
+.save   v(xunit13-5.out1)
+.save   v(xunit13-6.out1)
+.save   v(xunit13-7.out1)
+.save   v(xunit13-8.out1)
+.save   v(xunit13-9.out1)
+.save   v(xunit13-10.out1)
+.save   v(xunit13-11.out1)
+.save   v(xunit13-12.out1)
+.save   v(xunit13-13.out1)
+.save   v(xunit13-14.out1)
+.save   v(xunit13-15.out1)
+.save   v(xunit13-16.out1)
+.save   v(xunit13-17.out1)
+.save   v(xunit13-18.out1)
+.save   v(xunit13-19.out1)
+.save   v(xunit13-20.out1)
+
+.save   v.xunit14-1.vtemp2#branch
+.save   v.xunit14-2.vtemp2#branch
+.save   v.xunit14-3.vtemp2#branch
+.save   v.xunit14-4.vtemp2#branch
+.save   v.xunit14-5.vtemp2#branch
+.save   v.xunit14-6.vtemp2#branch
+.save   v.xunit14-7.vtemp2#branch
+.save   v.xunit14-8.vtemp2#branch
+.save   v.xunit14-9.vtemp2#branch
+.save   v.xunit14-10.vtemp2#branch
+.save   v.xunit14-11.vtemp2#branch
+.save   v.xunit14-12.vtemp2#branch
+.save   v.xunit14-13.vtemp2#branch
+.save   v.xunit14-14.vtemp2#branch
+.save   v.xunit14-15.vtemp2#branch
+.save   v.xunit14-16.vtemp2#branch
+.save   v.xunit14-17.vtemp2#branch
+.save   v.xunit14-18.vtemp2#branch
+.save   v.xunit14-19.vtemp2#branch
+.save   v.xunit14-20.vtemp2#branch
+
+.save   v(xunit14-1.out1)
+.save   v(xunit14-2.out1)
+.save   v(xunit14-3.out1)
+.save   v(xunit14-4.out1)
+.save   v(xunit14-5.out1)
+.save   v(xunit14-6.out1)
+.save   v(xunit14-7.out1)
+.save   v(xunit14-8.out1)
+.save   v(xunit14-9.out1)
+.save   v(xunit14-10.out1)
+.save   v(xunit14-11.out1)
+.save   v(xunit14-12.out1)
+.save   v(xunit14-13.out1)
+.save   v(xunit14-14.out1)
+.save   v(xunit14-15.out1)
+.save   v(xunit14-16.out1)
+.save   v(xunit14-17.out1)
+.save   v(xunit14-18.out1)
+.save   v(xunit14-19.out1)
+.save   v(xunit14-20.out1)
+
+.save   v.xunit15-1.vtemp2#branch
+.save   v.xunit15-2.vtemp2#branch
+.save   v.xunit15-3.vtemp2#branch
+.save   v.xunit15-4.vtemp2#branch
+.save   v.xunit15-5.vtemp2#branch
+.save   v.xunit15-6.vtemp2#branch
+.save   v.xunit15-7.vtemp2#branch
+.save   v.xunit15-8.vtemp2#branch
+.save   v.xunit15-9.vtemp2#branch
+.save   v.xunit15-10.vtemp2#branch
+.save   v.xunit15-11.vtemp2#branch
+.save   v.xunit15-12.vtemp2#branch
+.save   v.xunit15-13.vtemp2#branch
+.save   v.xunit15-14.vtemp2#branch
+.save   v.xunit15-15.vtemp2#branch
+.save   v.xunit15-16.vtemp2#branch
+.save   v.xunit15-17.vtemp2#branch
+.save   v.xunit15-18.vtemp2#branch
+.save   v.xunit15-19.vtemp2#branch
+.save   v.xunit15-20.vtemp2#branch
+
+.save   v(xunit15-1.out1)
+.save   v(xunit15-2.out1)
+.save   v(xunit15-3.out1)
+.save   v(xunit15-4.out1)
+.save   v(xunit15-5.out1)
+.save   v(xunit15-6.out1)
+.save   v(xunit15-7.out1)
+.save   v(xunit15-8.out1)
+.save   v(xunit15-9.out1)
+.save   v(xunit15-10.out1)
+.save   v(xunit15-11.out1)
+.save   v(xunit15-12.out1)
+.save   v(xunit15-13.out1)
+.save   v(xunit15-14.out1)
+.save   v(xunit15-15.out1)
+.save   v(xunit15-16.out1)
+.save   v(xunit15-17.out1)
+.save   v(xunit15-18.out1)
+.save   v(xunit15-19.out1)
+.save   v(xunit15-20.out1)
+
+.save   v.xunit16-1.vtemp2#branch
+.save   v.xunit16-2.vtemp2#branch
+.save   v.xunit16-3.vtemp2#branch
+.save   v.xunit16-4.vtemp2#branch
+.save   v.xunit16-5.vtemp2#branch
+.save   v.xunit16-6.vtemp2#branch
+.save   v.xunit16-7.vtemp2#branch
+.save   v.xunit16-8.vtemp2#branch
+.save   v.xunit16-9.vtemp2#branch
+.save   v.xunit16-10.vtemp2#branch
+.save   v.xunit16-11.vtemp2#branch
+.save   v.xunit16-12.vtemp2#branch
+.save   v.xunit16-13.vtemp2#branch
+.save   v.xunit16-14.vtemp2#branch
+.save   v.xunit16-15.vtemp2#branch
+.save   v.xunit16-16.vtemp2#branch
+.save   v.xunit16-17.vtemp2#branch
+.save   v.xunit16-18.vtemp2#branch
+.save   v.xunit16-19.vtemp2#branch
+.save   v.xunit16-20.vtemp2#branch
+
+.save   v(xunit16-1.out1)
+.save   v(xunit16-2.out1)
+.save   v(xunit16-3.out1)
+.save   v(xunit16-4.out1)
+.save   v(xunit16-5.out1)
+.save   v(xunit16-6.out1)
+.save   v(xunit16-7.out1)
+.save   v(xunit16-8.out1)
+.save   v(xunit16-9.out1)
+.save   v(xunit16-10.out1)
+.save   v(xunit16-11.out1)
+.save   v(xunit16-12.out1)
+.save   v(xunit16-13.out1)
+.save   v(xunit16-14.out1)
+.save   v(xunit16-15.out1)
+.save   v(xunit16-16.out1)
+.save   v(xunit16-17.out1)
+.save   v(xunit16-18.out1)
+.save   v(xunit16-19.out1)
+.save   v(xunit16-20.out1)
+
+.save   v.xunit17-1.vtemp2#branch
+.save   v.xunit17-2.vtemp2#branch
+.save   v.xunit17-3.vtemp2#branch
+.save   v.xunit17-4.vtemp2#branch
+.save   v.xunit17-5.vtemp2#branch
+.save   v.xunit17-6.vtemp2#branch
+.save   v.xunit17-7.vtemp2#branch
+.save   v.xunit17-8.vtemp2#branch
+.save   v.xunit17-9.vtemp2#branch
+.save   v.xunit17-10.vtemp2#branch
+.save   v.xunit17-11.vtemp2#branch
+.save   v.xunit17-12.vtemp2#branch
+.save   v.xunit17-13.vtemp2#branch
+.save   v.xunit17-14.vtemp2#branch
+.save   v.xunit17-15.vtemp2#branch
+.save   v.xunit17-16.vtemp2#branch
+.save   v.xunit17-17.vtemp2#branch
+.save   v.xunit17-18.vtemp2#branch
+.save   v.xunit17-19.vtemp2#branch
+.save   v.xunit17-20.vtemp2#branch
+
+.save   v(xunit17-1.out1)
+.save   v(xunit17-2.out1)
+.save   v(xunit17-3.out1)
+.save   v(xunit17-4.out1)
+.save   v(xunit17-5.out1)
+.save   v(xunit17-6.out1)
+.save   v(xunit17-7.out1)
+.save   v(xunit17-8.out1)
+.save   v(xunit17-9.out1)
+.save   v(xunit17-10.out1)
+.save   v(xunit17-11.out1)
+.save   v(xunit17-12.out1)
+.save   v(xunit17-13.out1)
+.save   v(xunit17-14.out1)
+.save   v(xunit17-15.out1)
+.save   v(xunit17-16.out1)
+.save   v(xunit17-17.out1)
+.save   v(xunit17-18.out1)
+.save   v(xunit17-19.out1)
+.save   v(xunit17-20.out1)
+
+.save   v.xunit18-1.vtemp2#branch
+.save   v.xunit18-2.vtemp2#branch
+.save   v.xunit18-3.vtemp2#branch
+.save   v.xunit18-4.vtemp2#branch
+.save   v.xunit18-5.vtemp2#branch
+.save   v.xunit18-6.vtemp2#branch
+.save   v.xunit18-7.vtemp2#branch
+.save   v.xunit18-8.vtemp2#branch
+.save   v.xunit18-9.vtemp2#branch
+.save   v.xunit18-10.vtemp2#branch
+.save   v.xunit18-11.vtemp2#branch
+.save   v.xunit18-12.vtemp2#branch
+.save   v.xunit18-13.vtemp2#branch
+.save   v.xunit18-14.vtemp2#branch
+.save   v.xunit18-15.vtemp2#branch
+.save   v.xunit18-16.vtemp2#branch
+.save   v.xunit18-17.vtemp2#branch
+.save   v.xunit18-18.vtemp2#branch
+.save   v.xunit18-19.vtemp2#branch
+.save   v.xunit18-20.vtemp2#branch
+
+.save   v(xunit18-1.out1)
+.save   v(xunit18-2.out1)
+.save   v(xunit18-3.out1)
+.save   v(xunit18-4.out1)
+.save   v(xunit18-5.out1)
+.save   v(xunit18-6.out1)
+.save   v(xunit18-7.out1)
+.save   v(xunit18-8.out1)
+.save   v(xunit18-9.out1)
+.save   v(xunit18-10.out1)
+.save   v(xunit18-11.out1)
+.save   v(xunit18-12.out1)
+.save   v(xunit18-13.out1)
+.save   v(xunit18-14.out1)
+.save   v(xunit18-15.out1)
+.save   v(xunit18-16.out1)
+.save   v(xunit18-17.out1)
+.save   v(xunit18-18.out1)
+.save   v(xunit18-19.out1)
+.save   v(xunit18-20.out1)
+
+.save   v.xunit19-1.vtemp2#branch
+.save   v.xunit19-2.vtemp2#branch
+.save   v.xunit19-3.vtemp2#branch
+.save   v.xunit19-4.vtemp2#branch
+.save   v.xunit19-5.vtemp2#branch
+.save   v.xunit19-6.vtemp2#branch
+.save   v.xunit19-7.vtemp2#branch
+.save   v.xunit19-8.vtemp2#branch
+.save   v.xunit19-9.vtemp2#branch
+.save   v.xunit19-10.vtemp2#branch
+.save   v.xunit19-11.vtemp2#branch
+.save   v.xunit19-12.vtemp2#branch
+.save   v.xunit19-13.vtemp2#branch
+.save   v.xunit19-14.vtemp2#branch
+.save   v.xunit19-15.vtemp2#branch
+.save   v.xunit19-16.vtemp2#branch
+.save   v.xunit19-17.vtemp2#branch
+.save   v.xunit19-18.vtemp2#branch
+.save   v.xunit19-19.vtemp2#branch
+.save   v.xunit19-20.vtemp2#branch
+
+.save   v(xunit19-1.out1)
+.save   v(xunit19-2.out1)
+.save   v(xunit19-3.out1)
+.save   v(xunit19-4.out1)
+.save   v(xunit19-5.out1)
+.save   v(xunit19-6.out1)
+.save   v(xunit19-7.out1)
+.save   v(xunit19-8.out1)
+.save   v(xunit19-9.out1)
+.save   v(xunit19-10.out1)
+.save   v(xunit19-11.out1)
+.save   v(xunit19-12.out1)
+.save   v(xunit19-13.out1)
+.save   v(xunit19-14.out1)
+.save   v(xunit19-15.out1)
+.save   v(xunit19-16.out1)
+.save   v(xunit19-17.out1)
+.save   v(xunit19-18.out1)
+.save   v(xunit19-19.out1)
+.save   v(xunit19-20.out1)
+
+.save   v.xunit20-1.vtemp2#branch
+.save   v.xunit20-2.vtemp2#branch
+.save   v.xunit20-3.vtemp2#branch
+.save   v.xunit20-4.vtemp2#branch
+.save   v.xunit20-5.vtemp2#branch
+.save   v.xunit20-6.vtemp2#branch
+.save   v.xunit20-7.vtemp2#branch
+.save   v.xunit20-8.vtemp2#branch
+.save   v.xunit20-9.vtemp2#branch
+.save   v.xunit20-10.vtemp2#branch
+.save   v.xunit20-11.vtemp2#branch
+.save   v.xunit20-12.vtemp2#branch
+.save   v.xunit20-13.vtemp2#branch
+.save   v.xunit20-14.vtemp2#branch
+.save   v.xunit20-15.vtemp2#branch
+.save   v.xunit20-16.vtemp2#branch
+.save   v.xunit20-17.vtemp2#branch
+.save   v.xunit20-18.vtemp2#branch
+.save   v.xunit20-19.vtemp2#branch
+.save   v.xunit20-20.vtemp2#branch
+
+.save   v(xunit20-1.out1)
+.save   v(xunit20-2.out1)
+.save   v(xunit20-3.out1)
+.save   v(xunit20-4.out1)
+.save   v(xunit20-5.out1)
+.save   v(xunit20-6.out1)
+.save   v(xunit20-7.out1)
+.save   v(xunit20-8.out1)
+.save   v(xunit20-9.out1)
+.save   v(xunit20-10.out1)
+.save   v(xunit20-11.out1)
+.save   v(xunit20-12.out1)
+.save   v(xunit20-13.out1)
+.save   v(xunit20-14.out1)
+.save   v(xunit20-15.out1)
+.save   v(xunit20-16.out1)
+.save   v(xunit20-17.out1)
+.save   v(xunit20-18.out1)
+.save   v(xunit20-19.out1)
+.save   v(xunit20-20.out1)
+
+
+.save v(vt1)
+
+.control
+set xtrtol=1
+let deltime = stime/899
+tran $&deltime $&stime uic
+linearize
+run
+write rawfile.raw
+set color0=white
+set color1=black
+set xbrushwidth=2
+.endc
